@@ -2,10 +2,10 @@
     <id>com.hardy.JsonTool</id>
     <name>Java Bean To Json Tool</name>
     <version>1.0</version>
-    <vendor email="support@yourcompany.com" url="http://www.yourcompany.com">YourCompany</vendor>
+    <vendor email="genghz@outlook.com" url="https://github.com/genghaizhou/json-tool-plugin">hardy</vendor>
 
     <description><![CDATA[
-      Convert Java Bean To Json or Json-Schema
+      An Simple Json Tool Convert Java Bean To Json or Json-Schema
     ]]></description>
 
     <change-notes><![CDATA[
