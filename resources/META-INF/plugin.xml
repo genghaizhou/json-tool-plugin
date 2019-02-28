@@ -1,16 +1,19 @@
 <idea-plugin>
     <id>com.hardy.JsonTool</id>
     <name>Java Bean To Json Tool</name>
-    <version>1.0</version>
-    <vendor email="genghz@outlook.com" url="https://github.com/genghaizhou/json-tool-plugin">hardy</vendor>
+    <version>1.0.1</version>
+    <vendor email="genghz@outlook.com" url="https://github.com/genghaizhou/json-tool-plugin">Hardy</vendor>
 
     <description><![CDATA[
-      An Simple Json Tool Convert Java Bean To Json or Json-Schema
+        <p> An Simple Json Tool Convert Java Bean To Json or Json-Schema </p>
+
+        <p> To Json can be used to construct post request </p>
+        <p> To Json-Schema can be apply to create API documents </p>
+
     ]]></description>
 
     <change-notes><![CDATA[
-      Add change notes here.<br>
-      <em>most HTML tags may be used</em>
+        <li>1.0.1 - init revision.</li>
     ]]>
     </change-notes>
 
