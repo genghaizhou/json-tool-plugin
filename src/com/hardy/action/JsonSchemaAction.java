@@ -4,6 +4,7 @@ import com.google.gson.GsonBuilder;
 import com.hardy.model.NormalTypeConst;
 import com.hardy.model.Schema;
 import com.hardy.model.SchemaType;
+import com.intellij.codeInsight.AnnotationUtil;
 import com.intellij.notification.*;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
@@ -11,17 +12,14 @@ import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.*;
-import com.intellij.psi.javadoc.PsiDocComment;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtil;
-import org.jetbrains.annotations.NonNls;
 
 import java.awt.*;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.LinkedList;
+
 
 /**
  * Author: Hardy
@@ -64,44 +62,46 @@ public class JsonSchemaAction extends AnAction {
 
 
     private Schema classParser(PsiClass clazz) {
-        Schema schema = Schema.createObject();
+        Schema root = Schema.createObject();
 
-        PsiClass superClass = clazz.getSuperClass();
-        if (superClass != null && !"Object".equals(superClass.getName())) {
-            getFields(superClass, schema);
-        }
+        LinkedList<PsiClass> clazzs = new LinkedList<>();
 
-        getFields(clazz, schema);
+        // 收集所有类
+        do {
+            clazzs.addFirst(clazz);
+            clazz = clazz.getSuperClass();
+        } while (clazz != null && !"Object".equals(clazz.getName()));
 
-        return schema;
+        // 构造schema
+        clazzs.forEach(c -> getFields(c, root));
+        return root;
     }
 
-    private void getFields(PsiClass clazz, Schema schema) {
+    private void getFields(PsiClass clazz, Schema root) {
         for (PsiField field : clazz.getFields()) {
-            Schema fieldSchema = getField(field.getTypeElement());
+            // 过滤掉静态字段
+            if (field.hasModifierProperty(PsiModifier.STATIC)) return;
 
-            // 获取注释 //** . */
-            if (field.getDocComment() != null && field.getDocComment().getText() != null) {
-                fieldSchema.setDescription(field.getDocComment().getText().replaceAll("[/*]", "").trim());
-            }
-            // 获取 // 注释
-            else {
-                StringBuilder sb = new StringBuilder();
-                for (String s : field.getText().split("\n")) {
-                    String temp = s.trim();
-                    if (temp.startsWith("//")) {
-                        sb.append(temp.replaceAll("//*", "").trim());
-                        sb.append(" ");
-                    }
-                }
-                fieldSchema.setDescription(sb.toString());
-            }
+            PsiTypeElement element = field.getTypeElement();
+            if (element == null) return;
 
-            schema.getProperties().set(field.getName(), fieldSchema);
+            // 生成基础的schema
+            Schema schema = genField(element);
+
+            // 构建注释
+            genComment(schema, field);
+
+            // 构建注解
+            boolean require = genAnnotation(schema, field);
+
+            // 添加到root schema
+            if (require) root.addRequire(field.getName());
+            root.getProperties().set(field.getName(), schema);
         }
     }
 
-    private Schema getField(PsiTypeElement element) {
+    // 构建字段的schema
+    private Schema genField(PsiTypeElement element) {
         // 获取字段类型
         PsiType type = element.getType();
         String typeName = type.getPresentableText();
@@ -112,12 +112,12 @@ public class JsonSchemaAction extends AnAction {
         }
         // 基本类型
         else if (type instanceof PsiPrimitiveType) {
-            return create(typeName);
+            return Schema.createBasic(typeName);
         }
         // 数组
         else if (type instanceof PsiArrayType) {
             PsiTypeElement arrayElement = (PsiTypeElement) element.getFirstChild();
-            return Schema.createArray(getField(arrayElement));
+            return Schema.createArray(genField(arrayElement));
         }
         // 列表
         else if (typeName.split("<")[0].contains("List") || typeName.split("<")[0].equals("Collection")) {
@@ -131,7 +131,7 @@ public class JsonSchemaAction extends AnAction {
             // 获取泛型
             PsiTypeElement generic = generics[0];
 
-            return Schema.createArray(getField(generic));
+            return Schema.createArray(genField(generic));
         }
         // map
         else if (typeName.split("<")[0].contains("Map")) {
@@ -141,9 +141,9 @@ public class JsonSchemaAction extends AnAction {
 
             return Schema.createObject();
         }
-        // 其他类型
+        // 正常类型
         else if (NormalTypeConst.isNormalType(typeName)) {
-            return create(typeName);
+            return Schema.createBasic(typeName);
         }
         // 其他的类
         else {
@@ -152,16 +152,159 @@ public class JsonSchemaAction extends AnAction {
         }
     }
 
-    private Schema create(String typeName) {
-        String name = typeName.toLowerCase();
+    // 构建注释
+    private void genComment(Schema schema, PsiField field) {
+        // 获取注释 //** . */
+        if (field.getDocComment() != null && field.getDocComment().getText() != null) {
+            schema.setDescription(field.getDocComment().getText().replaceAll("[/*]", "").trim());
+        }
+        // 获取 // 注释
+        else {
+            StringBuilder sb = new StringBuilder();
+            for (String s : field.getText().split("\n")) {
+                String temp = s.trim();
+                if (temp.startsWith("//")) {
+                    sb.append(temp.replaceAll("//*", "").trim());
+                    sb.append(" ");
+                }
+            }
+            schema.setDescription(sb.toString());
+        }
+    }
 
-        if ("boolean".equals(name))
-            return new Schema(SchemaType.BOOLEAN);
-        else if (Arrays.asList("char", "string", "bigdecimal", "date").contains(name))
-            return new Schema(SchemaType.STRING);
-        else if (Arrays.asList("byte", "short", "int", "long", "integer").contains(name))
-            return new Schema(SchemaType.INTEGER);
-        else
-            return new Schema(SchemaType.NUMBER);
+    // 构建注解 (是否是必须的)
+    private boolean genAnnotation(Schema schema, PsiField field) {
+        PsiModifierList modifierList = field.getModifierList();
+        if (modifierList == null) return false;
+
+        PsiAnnotation[] annotations = modifierList.getAnnotations();
+        if (annotations.length == 0) return false;
+
+        boolean require = false;
+
+        // 字符串
+        if (schema.getType().equals(SchemaType.STRING.val)) {
+            for (PsiAnnotation annotation : annotations) {
+                String qualifiedName = annotation.getQualifiedName();
+                if (qualifiedName == null) continue;
+
+                // 非处理注解
+                if (!qualifiedName.contains("javax.validation.constraints")) continue;
+
+                switch (qualifiedName) {
+                    case "javax.validation.constraints.NotNull":
+                        require = true;
+                        break;
+                    case "javax.validation.constraints.NotBlank":
+                        require = true;
+                        schema.setMinLength(1);
+                        break;
+                    case "javax.validation.constraints.Pattern":
+                        String regexp = AnnotationUtil.getStringAttributeValue(annotation, "regexp");
+                        if (regexp != null && !regexp.isEmpty()) schema.setPattern(regexp);
+                        break;
+                    case "javax.validation.constraints.Size":
+                        int min = AnnotationUtil.getLongAttributeValue(annotation, "min").intValue();
+                        int max = AnnotationUtil.getLongAttributeValue(annotation, "max").intValue();
+
+                        schema.setMinLength(min);
+                        schema.setMaxLength(max);
+                        break;
+                }
+            }
+        }
+
+        // 整数
+        if (schema.getType().equals(SchemaType.INTEGER.val)) {
+            for (PsiAnnotation annotation : annotations) {
+                String qualifiedName = annotation.getQualifiedName();
+                if (qualifiedName == null) continue;
+
+                // 非处理注解
+                if (!qualifiedName.contains("javax.validation.constraints")) continue;
+
+                switch (qualifiedName) {
+                    case "javax.validation.constraints.NotNull":
+                        require = true;
+                        break;
+                    case "javax.validation.constraints.Min":
+                        int min = AnnotationUtil.getLongAttributeValue(annotation, "value").intValue();
+                        schema.setMinimum(min);
+                        break;
+                    case "javax.validation.constraints.Max":
+                        int max = AnnotationUtil.getLongAttributeValue(annotation, "value").intValue();
+                        schema.setMaximum(max);
+                        break;
+                    case "javax.validation.constraints.Positive":
+                        schema.setMinimum(0);
+                        schema.setExclusiveMinimum(true);
+                        break;
+                    case "javax.validation.constraints.PositiveOrZero":
+                        schema.setMinimum(0);
+                        break;
+                    case "javax.validation.constraints.Negative":
+                        schema.setMaximum(0);
+                        schema.setExclusiveMaximum(true);
+                        break;
+                    case "javax.validation.constraints.NegativeOrZero":
+                        schema.setMaximum(0);
+                        break;
+                }
+            }
+        }
+
+        // 数字
+        if (schema.getType().equals(SchemaType.NUMBER.val)) {
+            for (PsiAnnotation annotation : annotations) {
+                String qualifiedName = annotation.getQualifiedName();
+                if (qualifiedName == null) continue;
+
+                // 非处理注解
+                if (!qualifiedName.contains("javax.validation.constraints")) continue;
+
+                switch (qualifiedName) {
+                    case "javax.validation.constraints.NotNull":
+                        require = true;
+                        break;
+                    case "javax.validation.constraints.Min":
+                        double min = AnnotationUtil.getLongAttributeValue(annotation, "value").doubleValue();
+                        schema.setMinimum(min);
+                        break;
+                    case "javax.validation.constraints.Max":
+                        double max = AnnotationUtil.getLongAttributeValue(annotation, "value").doubleValue();
+                        schema.setMaximum(max);
+                        break;
+                    case "javax.validation.constraints.DecimalMin":
+                        double bmin = Double.valueOf(AnnotationUtil.getStringAttributeValue(annotation, "value"));
+                        boolean bminIn = AnnotationUtil.getBooleanAttributeValue(annotation, "inclusive");
+
+                        schema.setMinimum(bmin);
+                        if (!bminIn) schema.setExclusiveMinimum(true);
+                        break;
+                    case "javax.validation.constraints.DecimalMax":
+                        double bmax = Double.valueOf(AnnotationUtil.getStringAttributeValue(annotation, "value"));
+                        boolean bmaxIn = AnnotationUtil.getBooleanAttributeValue(annotation, "inclusive");
+
+                        schema.setMaximum(bmax);
+                        if (!bmaxIn) schema.setExclusiveMaximum(true);
+                        break;
+                    case "javax.validation.constraints.Positive":
+                        schema.setMinimum(0);
+                        schema.setExclusiveMinimum(true);
+                        break;
+                    case "javax.validation.constraints.PositiveOrZero":
+                        schema.setMinimum(0);
+                        break;
+                    case "javax.validation.constraints.Negative":
+                        schema.setMaximum(0);
+                        schema.setExclusiveMaximum(true);
+                        break;
+                    case "javax.validation.constraints.NegativeOrZero":
+                        schema.setMaximum(0);
+                        break;
+                }
+            }
+        }
+        return require;
     }
 }
