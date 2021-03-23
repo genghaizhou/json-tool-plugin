@@ -39,6 +39,9 @@
 - 注: BigDecimal 生成类型为string
 
 ### 1.0.2
+- bug fix
+
+### 1.0.3
 - 支持部分`javax.validation.constraints`注解
   * `@NotNull` 字段必需存在
   * `@NotBlank` 字符串必需存在，且值长度>=1
@@ -53,4 +56,6 @@
   * `@Negative` 数字<0
   * `@NegativeOrZero` 数字<=0
 
+### 1.0.4
+- 增加`<idea-version since-build="181.5684.4" until-build="211.5787.15"/>`
     
