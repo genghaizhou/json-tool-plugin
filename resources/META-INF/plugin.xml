@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.hardy.JsonTool</id>
     <name>Java Bean To Json Tool</name>
-    <version>1.0.3</version>
+    <version>1.0.4</version>
     <vendor email="genghz@outlook.com" url="https://github.com/genghaizhou/json-tool-plugin">Hardy</vendor>
 
     <description><![CDATA[
@@ -14,12 +14,15 @@
 
     <change-notes><![CDATA[
         <li>1.0.1 - init revision.</li>
+        <li>1.0.2 - bug fix.</li>
         <li>1.0.3 - support part javax.validation.constraints.*. </li>
+        <li>1.0.4 - update idea-version </li>
     ]]>
     </change-notes>
 
     <!-- please see http://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/build_number_ranges.html for description -->
-    <idea-version since-build="173.0"/>
+    <!--<idea-version since-build="173.0"/>-->
+    <idea-version since-build="181.5684.4" until-build="211.5787.15"/>
 
     <!-- please see http://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/plugin_compatibility.html
          on how to target different products -->
